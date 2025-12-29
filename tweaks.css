@@ -1,0 +1,39 @@
+/* Make the whole page draggable (frameless window) */
+html, body {
+  -webkit-app-region: drag;
+}
+
+/* Default: video & controls are clickable (NOT draggable) */
+video, a, button, input, textarea, select, [role="button"] {
+  -webkit-app-region: no-drag;
+}
+
+/* Hold Space = DRAG MODE (lets you drag even on video) */
+html.__DRAGMODE__ video {
+  -webkit-app-region: drag !important;
+}
+
+/* Minimal safe page tweaks */
+
+/* Hide fullscreen top controls */
+.fullscreen-top-controls {
+  display: none !important;
+}
+
+/* Max-zoom mode (toggled with ⌥⌘Z) */
+html.__MAX_ZOOM__ {
+  --OBJX: 50%;
+}
+
+html.__MAX_ZOOM__ video {
+  width: 100vw !important;
+  height: 100vh !important;
+  object-fit: cover !important;
+  object-position: var(--OBJX) 50% !important;
+  background: black !important;
+}
+
+/* NUCLEAR: hide all player controls/overlays */
+.player__player-controls {
+  display: none !important;
+}

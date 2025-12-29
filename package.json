@@ -1,0 +1,26 @@
+{
+  "name": "scviewer",
+  "version": "0.0.1",
+  "description": "Minimal frameless Chromium viewer for Stripchat",
+  "main": "main.js",
+  "type": "commonjs",
+  "scripts": {
+    "start": "electron ."
+  },
+  "author": "",
+  "license": "ISC",
+  "devDependencies": {
+    "electron": "^39.2.7",
+    "electron-builder": "^26.0.12"
+  },
+  "build": {
+    "appId": "com.scviewer.app",
+    "productName": "SCviewer",
+    "mac": {
+      "category": "public.app-category.video",
+      "target": [
+        "dmg"
+      ]
+    }
+  }
+}

@@ -5,7 +5,8 @@
   "main": "main.js",
   "type": "commonjs",
   "scripts": {
-    "start": "electron ."
+    "start": "electron .",
+    "build": "electron-builder --mac --x64"
   },
   "author": "",
   "license": "ISC",
@@ -19,7 +20,10 @@
     "mac": {
       "category": "public.app-category.video",
       "target": [
-        "dmg"
+        {
+          "target": "dmg",
+          "arch": ["x64"]
+        }
       ]
     }
   }

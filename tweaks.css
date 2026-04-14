@@ -8,23 +8,15 @@ video, a, button, input, textarea, select, [role="button"] {
   -webkit-app-region: no-drag;
 }
 
-/* Hold Space = DRAG MODE (lets you drag even on video) */
-html.__DRAGMODE__ video {
-  -webkit-app-region: drag !important;
-}
-
-/* Minimal safe page tweaks */
-
 /* Hide fullscreen top controls */
 .fullscreen-top-controls {
   display: none !important;
 }
 
-/* Max-zoom mode (toggled with ⌥⌘Z) */
+/* Max-zoom mode (toggled with ⌘Z) */
 html.__MAX_ZOOM__ {
   --OBJX: 50%;
 }
-
 html.__MAX_ZOOM__ video {
   width: 100vw !important;
   height: 100vh !important;
@@ -36,4 +28,13 @@ html.__MAX_ZOOM__ video {
 /* NUCLEAR: hide all player controls/overlays */
 .player__player-controls {
   display: none !important;
+}
+
+/* UI hide mode (toggled with ⌘U) */
+html.__HIDE_UI__ video {
+  width: 100vw !important;
+  height: 100vh !important;
+  object-fit: cover !important;
+  object-position: var(--OBJX, 50%) 50% !important;
+  background: black !important;
 }

@@ -5,7 +5,6 @@ const path = require("path");
 const DEFAULT_URL = "https://stripchat.com";
 const CSS_PATH = path.join(__dirname, "tweaks.css");
 
-// Register once — handles objX updates coming from the wheel/swipe listener in the renderer
 ipcMain.on("update-objx", (event, val) => {
   const win = BrowserWindow.fromWebContents(event.sender);
   if (win) win.__objX = Math.min(100, Math.max(0, Number(val)));
@@ -46,12 +45,9 @@ function saveState() {
     const s = { windows };
     fs.mkdirSync(app.getPath("userData"), { recursive: true });
     fs.writeFileSync(statePath(), JSON.stringify(s, null, 2), "utf8");
-  } catch {
-    // intentionally silent
-  }
+  } catch {}
 }
 
-// Injected into each page to handle horizontal wheel/swipe → pan
 const WHEEL_SCRIPT = `
   (function () {
     if (window.__scv_wheel) return;
@@ -62,7 +58,7 @@ const WHEEL_SCRIPT = `
     );
 
     window.addEventListener("wheel", function (e) {
-      if (Math.abs(e.deltaX) <= Math.abs(e.deltaY)) return; // horizontal only
+      if (Math.abs(e.deltaX) <= Math.abs(e.deltaY)) return;
       e.preventDefault();
 
       objX = Math.min(100, Math.max(0, objX + e.deltaX * 0.1));
@@ -94,33 +90,38 @@ function createWindow(opts = {}) {
     } catch {}
   }
 
-  w.__zoomOn   = typeof opts.zoom      === "boolean" ? opts.zoom      : true;
-  w.__objX     = typeof opts.objX      === "number"  ? opts.objX      : 50;
-  w.__uiHidden = typeof opts.uiHidden  === "boolean" ? opts.uiHidden  : false;
+  w.__zoomOn = typeof opts.zoom === "boolean" ? opts.zoom : true;
+  w.__objX = typeof opts.objX === "number" ? opts.objX : 50;
+  w.__uiHidden = typeof opts.uiHidden === "boolean" ? opts.uiHidden : false;
 
   w.loadURL(opts.url || DEFAULT_URL);
 
   async function injectTweaksAndState() {
     const css = readTweaksCSS();
     if (css.trim()) {
-      try { await w.webContents.insertCSS(css); } catch {}
+      try {
+        await w.webContents.insertCSS(css);
+      } catch {}
     }
 
     try {
       await w.webContents.executeJavaScript(
-        `document.documentElement.classList.toggle('__MAX_ZOOM__', ${w.__zoomOn});`, true
+        `document.documentElement.classList.toggle('__MAX_ZOOM__', ${w.__zoomOn});`,
+        true,
       );
     } catch {}
 
     try {
       await w.webContents.executeJavaScript(
-        `document.documentElement.style.setProperty('--OBJX', '${w.__objX}%');`, true
+        `document.documentElement.style.setProperty('--OBJX', '${w.__objX}%');`,
+        true,
       );
     } catch {}
 
     try {
       await w.webContents.executeJavaScript(
-        `document.documentElement.classList.toggle('__HIDE_UI__', ${w.__uiHidden});`, true
+        `document.documentElement.classList.toggle('__HIDE_UI__', ${w.__uiHidden});`,
+        true,
       );
     } catch {}
 
@@ -129,40 +130,51 @@ function createWindow(opts = {}) {
     } catch {}
   }
 
-  w.webContents.on("did-finish-load",      injectTweaksAndState);
+  w.webContents.on("did-finish-load", injectTweaksAndState);
   w.webContents.on("did-navigate-in-page", injectTweaksAndState);
-  w.webContents.on("did-navigate",         injectTweaksAndState);
+  w.webContents.on("did-navigate", injectTweaksAndState);
 
   const step = 5;
 
   function setObjX() {
-    w.webContents.executeJavaScript(
-      `document.documentElement.style.setProperty('--OBJX', '${w.__objX}%');`, true
-    ).catch(() => {});
+    w.webContents
+      .executeJavaScript(
+        `document.documentElement.style.setProperty('--OBJX', '${w.__objX}%');`,
+        true,
+      )
+      .catch(() => {});
   }
 
   function setZoom() {
-    w.webContents.executeJavaScript(
-      `document.documentElement.classList.toggle('__MAX_ZOOM__', ${w.__zoomOn});`, true
-    ).catch(() => {});
+    w.webContents
+      .executeJavaScript(
+        `document.documentElement.classList.toggle('__MAX_ZOOM__', ${w.__zoomOn});`,
+        true,
+      )
+      .catch(() => {});
   }
 
   function setUIVisibility() {
-    w.webContents.executeJavaScript(
-      `document.documentElement.classList.toggle('__HIDE_UI__', ${w.__uiHidden});`, true
-    ).catch(() => {});
+    w.webContents
+      .executeJavaScript(
+        `document.documentElement.classList.toggle('__HIDE_UI__', ${w.__uiHidden});`,
+        true,
+      )
+      .catch(() => {});
   }
 
   w.webContents.on("before-input-event", (event, input) => {
-    // Quit
     if (input.key === "Escape") {
       event.preventDefault();
       app.quit();
       return;
     }
 
-    // Back: ⌘[
-    if (input.type === "keyDown" && input.meta && input.code === "BracketLeft") {
+    if (
+      input.type === "keyDown" &&
+      input.meta &&
+      input.code === "BracketLeft"
+    ) {
       if (w.webContents.canGoBack()) {
         event.preventDefault();
         w.webContents.goBack();
@@ -170,8 +182,11 @@ function createWindow(opts = {}) {
       return;
     }
 
-    // Forward: ⌘]
-    if (input.type === "keyDown" && input.meta && input.code === "BracketRight") {
+    if (
+      input.type === "keyDown" &&
+      input.meta &&
+      input.code === "BracketRight"
+    ) {
       if (w.webContents.canGoForward()) {
         event.preventDefault();
         w.webContents.goForward();
@@ -179,7 +194,6 @@ function createWindow(opts = {}) {
       return;
     }
 
-    // New window: ⌘N
     if (input.type === "keyDown" && input.meta && input.code === "KeyN") {
       event.preventDefault();
       createWindow();
@@ -202,12 +216,11 @@ function createWindow(opts = {}) {
       return;
     }
 
-    // Arrow left/right → pan (zoom must be active)
     if (input.key === "ArrowLeft" || input.key === "ArrowRight") {
       event.preventDefault();
       if (!w.__zoomOn) return;
 
-      if (input.key === "ArrowLeft")  w.__objX = Math.max(0,   w.__objX - step);
+      if (input.key === "ArrowLeft") w.__objX = Math.max(0, w.__objX - step);
       if (input.key === "ArrowRight") w.__objX = Math.min(100, w.__objX + step);
       setObjX();
       return;

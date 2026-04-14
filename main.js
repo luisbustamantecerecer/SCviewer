@@ -1,9 +1,15 @@
-const { app, BrowserWindow } = require("electron");
+const { app, BrowserWindow, ipcMain } = require("electron");
 const fs = require("fs");
 const path = require("path");
 
 const DEFAULT_URL = "https://stripchat.com";
 const CSS_PATH = path.join(__dirname, "tweaks.css");
+
+// Register once — handles objX updates coming from the wheel/swipe listener in the renderer
+ipcMain.on("update-objx", (event, val) => {
+  const win = BrowserWindow.fromWebContents(event.sender);
+  if (win) win.__objX = Math.min(100, Math.max(0, Number(val)));
+});
 
 function readTweaksCSS() {
   try {
@@ -34,6 +40,7 @@ function saveState() {
       bounds: w.getBounds(),
       zoom: w.__zoomOn ?? true,
       objX: w.__objX ?? 50,
+      uiHidden: w.__uiHidden ?? false,
     }));
 
     const s = { windows };
@@ -43,6 +50,27 @@ function saveState() {
     // intentionally silent
   }
 }
+
+// Injected into each page to handle horizontal wheel/swipe → pan
+const WHEEL_SCRIPT = `
+  (function () {
+    if (window.__scv_wheel) return;
+    window.__scv_wheel = true;
+
+    let objX = parseFloat(
+      getComputedStyle(document.documentElement).getPropertyValue("--OBJX") || "50"
+    );
+
+    window.addEventListener("wheel", function (e) {
+      if (Math.abs(e.deltaX) <= Math.abs(e.deltaY)) return; // horizontal only
+      e.preventDefault();
+
+      objX = Math.min(100, Math.max(0, objX + e.deltaX * 0.1));
+      document.documentElement.style.setProperty("--OBJX", objX + "%");
+      if (window.electronAPI) window.electronAPI.updateObjX(objX);
+    }, { passive: false });
+  })();
+`;
 
 function createWindow(opts = {}) {
   const w = new BrowserWindow({
@@ -56,79 +84,80 @@ function createWindow(opts = {}) {
       contextIsolation: true,
       sandbox: true,
       nodeIntegration: false,
+      preload: path.join(__dirname, "preload.js"),
     },
   });
 
-  // Restore bounds if provided
   if (opts.bounds && typeof opts.bounds === "object") {
     try {
       w.setBounds(opts.bounds);
     } catch {}
   }
 
-  // Per-window state (defaults)
-  w.__zoomOn = typeof opts.zoom === "boolean" ? opts.zoom : true; // default zoom ON
-  w.__objX = typeof opts.objX === "number" ? opts.objX : 50;
+  w.__zoomOn   = typeof opts.zoom      === "boolean" ? opts.zoom      : true;
+  w.__objX     = typeof opts.objX      === "number"  ? opts.objX      : 50;
+  w.__uiHidden = typeof opts.uiHidden  === "boolean" ? opts.uiHidden  : false;
 
-  const urlToLoad = opts.url || DEFAULT_URL;
-  w.loadURL(urlToLoad);
+  w.loadURL(opts.url || DEFAULT_URL);
 
   async function injectTweaksAndState() {
     const css = readTweaksCSS();
     if (css.trim()) {
-      try {
-        await w.webContents.insertCSS(css);
-      } catch {}
+      try { await w.webContents.insertCSS(css); } catch {}
     }
 
-    // Enforce zoom (default ON, or restored value)
     try {
       await w.webContents.executeJavaScript(
-        `document.documentElement.classList.toggle('__MAX_ZOOM__', ${w.__zoomOn ? "true" : "false"});`,
-        true
+        `document.documentElement.classList.toggle('__MAX_ZOOM__', ${w.__zoomOn});`, true
       );
     } catch {}
 
-    // Restore OBJX (horizontal crop position)
     try {
       await w.webContents.executeJavaScript(
-        `document.documentElement.style.setProperty('--OBJX', '${w.__objX}%');`,
-        true
+        `document.documentElement.style.setProperty('--OBJX', '${w.__objX}%');`, true
       );
+    } catch {}
+
+    try {
+      await w.webContents.executeJavaScript(
+        `document.documentElement.classList.toggle('__HIDE_UI__', ${w.__uiHidden});`, true
+      );
+    } catch {}
+
+    try {
+      await w.webContents.executeJavaScript(WHEEL_SCRIPT, true);
     } catch {}
   }
 
-  // Inject on initial load + SPA-ish navigations
-  w.webContents.on("did-finish-load", injectTweaksAndState);
+  w.webContents.on("did-finish-load",      injectTweaksAndState);
   w.webContents.on("did-navigate-in-page", injectTweaksAndState);
-  w.webContents.on("did-navigate", injectTweaksAndState);
+  w.webContents.on("did-navigate",         injectTweaksAndState);
 
-  const step = 5; // percent per keypress
+  const step = 5;
 
   function setObjX() {
-    const js = `document.documentElement.style.setProperty('--OBJX', '${w.__objX}%');`;
-    w.webContents.executeJavaScript(js, true).catch(() => {});
+    w.webContents.executeJavaScript(
+      `document.documentElement.style.setProperty('--OBJX', '${w.__objX}%');`, true
+    ).catch(() => {});
   }
 
   function setZoom() {
-    const js = `document.documentElement.classList.toggle('__MAX_ZOOM__', ${w.__zoomOn ? "true" : "false"});`;
-    w.webContents.executeJavaScript(js, true).catch(() => {});
+    w.webContents.executeJavaScript(
+      `document.documentElement.classList.toggle('__MAX_ZOOM__', ${w.__zoomOn});`, true
+    ).catch(() => {});
+  }
+
+  function setUIVisibility() {
+    w.webContents.executeJavaScript(
+      `document.documentElement.classList.toggle('__HIDE_UI__', ${w.__uiHidden});`, true
+    ).catch(() => {});
   }
 
   w.webContents.on("before-input-event", (event, input) => {
-    // Quit everything
+    // Quit
     if (input.key === "Escape") {
       event.preventDefault();
       app.quit();
-      return;
-    }
-
-    // Hold Space to enable drag mode (so you can drag even on video)
-    if (input.code === "Space") {
-      event.preventDefault();
-      const on = input.type === "keyDown";
-      const js = `document.documentElement.classList.toggle("__DRAGMODE__", ${on ? "true" : "false"});`;
-      w.webContents.executeJavaScript(js, true).catch(() => {});
       return;
     }
 
@@ -150,10 +179,10 @@ function createWindow(opts = {}) {
       return;
     }
 
-    // New Window: ⌘N
+    // New window: ⌘N
     if (input.type === "keyDown" && input.meta && input.code === "KeyN") {
       event.preventDefault();
-      createWindow(); // shared session by default
+      createWindow();
       return;
     }
 
@@ -165,22 +194,27 @@ function createWindow(opts = {}) {
       return;
     }
 
-    // Nudge left/right only when zoom is active
+    // UI toggle: ⌘U
+    if (input.type === "keyDown" && input.meta && input.code === "KeyU") {
+      event.preventDefault();
+      w.__uiHidden = !w.__uiHidden;
+      setUIVisibility();
+      return;
+    }
+
+    // Arrow left/right → pan (zoom must be active)
     if (input.key === "ArrowLeft" || input.key === "ArrowRight") {
       event.preventDefault();
       if (!w.__zoomOn) return;
 
-      if (input.key === "ArrowLeft") w.__objX = Math.max(0, w.__objX - step);
+      if (input.key === "ArrowLeft")  w.__objX = Math.max(0,   w.__objX - step);
       if (input.key === "ArrowRight") w.__objX = Math.min(100, w.__objX + step);
       setObjX();
       return;
     }
   });
 
-  // Save state BEFORE windows are destroyed (so getAllWindows() still includes them)
-  w.on("close", () => {
-    saveState();
-  });
+  w.on("close", () => saveState());
 
   return w;
 }
